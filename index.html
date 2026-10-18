@@ -75,6 +75,7 @@
 
     <div class="px-3 pb-2 flex gap-2">
       <button id="newGroupBtn" class="flex-1 py-2 text-sm rounded-xl bg-emerald-600 text-white font-semibold">+ New Group</button>
+      <button id="inviteBtn" class="flex-1 py-2 text-sm rounded-xl bg-neutral-200 dark:bg-neutral-700 font-semibold">Invite</button>
     </div>
 
     <div id="chatList" class="flex-1 overflow-y-auto scroll"></div>
@@ -141,10 +142,10 @@
 
 <script>
 /* ---------------- Firebase config ----------------
-   For a static HTML deploy, paste your Firebase web config here.
-   These values are public client identifiers; protect data with rules. */
+   Replace these with the config from:
+   Firebase Console -> Project settings -> General -> Your apps -> Web app -> Config */
 const firebaseConfig = {
- apiKey: "AIzaSyADf0haJUFeKyP-HxnqrhREnQ_2pVYnDzU",
+  apiKey: "AIzaSyADf0haJUFeKyP-HxnqrhREnQ_2pVYnDzU",
   authDomain: "messager-cabb1.firebaseapp.com",
   projectId: "messager-cabb1",
   storageBucket: "messager-cabb1.firebasestorage.app",
@@ -182,7 +183,8 @@ function authErrorMessage(code){
     "auth/email-already-in-use":"This email is already registered.",
     "auth/weak-password":"Password must be at least 6 characters.",
     "auth/invalid-email":"Please enter a valid email.",
-    "auth/too-many-requests":"Too many attempts. Try again later."
+    "auth/too-many-requests":"Too many attempts. Try again later.",
+    "auth/unauthorized-domain":"This website domain is not authorized in Firebase."
   };
   return map[code] || "Something went wrong. Please try again.";
 }
@@ -314,6 +316,26 @@ window.addEventListener("beforeunload", ()=>{
       .update({isOnline:false, lastSeen:firebase.firestore.FieldValue.serverTimestamp()});
   }
 });
+
+/* ---------------- Invite friends ---------------- */
+$("inviteBtn").onclick = async ()=>{
+  const link = window.location.origin;
+  const text = `Join me on NexChat 💬\n${link}`;
+  if(navigator.share){
+    try{
+      await navigator.share({title:"NexChat", text:text, url:link});
+    }catch(e){
+      // User closed the share menu
+    }
+  } else {
+    try{
+      await navigator.clipboard.writeText(text);
+      toast("Invite link copied! Send it to your friends 📋");
+    }catch(e){
+      toast(link, false);
+    }
+  }
+};
 
 /* ---------------- Profile modal ---------------- */
 $("profileBtn").onclick = ()=>{
