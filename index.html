@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>NexChat — Real-time Messaging</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💬</text></svg>">
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  .bubble-me{background:#059669;color:white;border-radius:18px 18px 4px 18px}
+  .bubble-them{background:#e5e7eb;color:#111827;border-radius:18px 18px 18px 4px}
+  .dark .bubble-them{background:#374151;color:#f3f4f6}
+  .scroll::-webkit-scrollbar{width:6px}
+  .scroll::-webkit-scrollbar-thumb{background:#9ca3af;border-radius:99px}
+</style>
+</head>
+<body class="bg-neutral-100 dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 h-screen overflow-hidden">
+
+<!-- Toast -->
+<div id="toast" class="fixed top-4 left-1/2 -translate-x-1/2 z-50 hidden px-4 py-2 rounded-xl bg-neutral-900 text-white shadow-lg"></div>
+
+<!-- Auth Screen -->
+<section id="authScreen" class="h-full flex items-center justify-center p-4">
+  <div class="w-full max-w-md bg-white dark:bg-neutral-800 rounded-3xl shadow-xl p-6">
+    <div class="text-center mb-6">
+      <div class="text-5xl">💬</div>
+      <h1 class="text-3xl font-bold text-emerald-600">NexChat</h1>
+      <p class="text-sm opacity-70">Chat fast. Stay connected. 🚀</p>
+    </div>
+
+    <div class="flex gap-2 mb-4">
+      <button data-tab="login" class="authTab flex-1 py-2 rounded-xl font-semibold bg-emerald-600 text-white">Login</button>
+      <button data-tab="signup" class="authTab flex-1 py-2 rounded-xl font-semibold bg-neutral-200 dark:bg-neutral-700">Sign Up</button>
+    </div>
+
+    <form id="authForm" class="space-y-3">
+      <input id="nameInput" placeholder="Full name" class="hidden w-full px-4 py-3 rounded-xl bg-neutral-100 dark:bg-neutral-700 outline-none" />
+      <input id="emailInput" type="email" required placeholder="Email" class="w-full px-4 py-3 rounded-xl bg-neutral-100 dark:bg-neutral-700 outline-none" />
+      <input id="passInput" type="password" required minlength="6" placeholder="Password" class="w-full px-4 py-3 rounded-xl bg-neutral-100 dark:bg-neutral-700 outline-none" />
+      <button id="authBtn" class="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold">Login</button>
+    </form>
+
+    <button id="googleBtn" class="w-full mt-3 py-3 rounded-xl border border-neutral-300 dark:border-neutral-600 font-semibold">Continue with Google</button>
+    <button id="resetBtn" class="w-full mt-2 text-sm text-emerald-600 hover:underline">Forgot password?</button>
+    <p id="authError" class="mt-3 text-sm text-red-500 hidden"></p>
+  </div>
+</section>
+
+<!-- App Screen -->
+<section id="appScreen" class="hidden h-full flex">
+  <!-- Sidebar -->
+  <aside id="sidebar" class="w-full md:w-80 md:flex flex-col bg-white dark:bg-neutral-800 border-r border-neutral-200 dark:border-neutral-700">
+    <header class="p-4 flex items-center justify-between border-b border-neutral-200 dark:border-neutral-700">
+      <div class="flex items-center gap-3">
+        <img id="myAvatar" class="w-10 h-10 rounded-full object-cover bg-neutral-300" />
+        <div>
+          <p id="myName" class="font-semibold leading-tight"></p>
+          <p id="myStatus" class="text-xs opacity-60">Online 🟢</p>
+        </div>
+      </div>
+      <div class="flex gap-1">
+        <button id="themeBtn" title="Theme" class="p-2 rounded-lg hover:bg-neutral-100 dark:hover:bg-neutral-700">🌙</button>
+        <button id="profileBtn" title="Profile" class="p-2 rounded-lg hover:bg-neutral-100 dark:hover:bg-neutral-700">⚙️</button>
+        <button id="logoutBtn" title="Logout" class="p-2 rounded-lg hover:bg-neutral-100 dark:hover:bg-neutral-700">🚪</button>
+      </div>
+    </header>
+
+    <div class="p-3">
+      <input id="searchInput" placeholder="Search name or email" class="w-full px-4 py-2 rounded-xl bg-neutral-100 dark:bg-neutral-700 outline-none" />
+    </div>
+
+    <div class="px-3 pb-2 flex gap-2">
+      <button id="newGroupBtn" class="flex-1 py-2 text-sm rounded-xl bg-emerald-600 text-white font-semibold">+ New Group</button>
+    </div>
+
+    <div id="chatList" class="flex-1 overflow-y-auto scroll"></div>
+  </aside>
+
+  <!-- Chat panel -->
+  <main id="chatPanel" class="hidden md:flex flex-1 flex-col bg-neutral-50 dark:bg-neutral-900">
+    <div id="emptyChat" class="flex-1 flex flex-col items-center justify-center opacity-60">
+      <div class="text-6xl mb-3">🗨️</div>
+      <p>Select a chat to start messaging</p>
+    </div>
+
+    <div id="activeChat" class="hidden flex-1 flex flex-col">
+      <header class="p-3 flex items-center gap-3 bg-white dark:bg-neutral-800 border-b border-neutral-200 dark:border-neutral-700">
+        <button id="backBtn" class="md:hidden p-2 rounded-lg hover:bg-neutral-100 dark:hover:bg-neutral-700">←</button>
+        <img id="chatAvatar" class="w-10 h-10 rounded-full object-cover bg-neutral-300" />
+        <div>
+          <p id="chatTitle" class="font-semibold"></p>
+          <p id="chatSubtitle" class="text-xs opacity-60"></p>
+        </div>
+      </header>
+
+      <div id="messages" class="flex-1 overflow-y-auto scroll p-4 space-y-2"></div>
+
+      <div id="typingBar" class="px-4 text-xs text-emerald-600 hidden">typing… ✍️</div>
+
+      <form id="msgForm" class="p-3 bg-white dark:bg-neutral-800 border-t border-neutral-200 dark:border-neutral-700 flex gap-2 items-center">
+        <input type="file" id="fileInput" class="hidden" />
+        <button type="button" id="attachBtn" class="p-3 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-700">📎</button>
+        <input id="msgInput" autocomplete="off" placeholder="Type a message…" class="flex-1 px-4 py-3 rounded-full bg-neutral-100 dark:bg-neutral-700 outline-none" />
+        <button class="p-3 rounded-full bg-emerald-600 text-white hover:bg-emerald-700">➤</button>
+      </form>
+    </div>
+  </main>
+</section>
+
+<!-- Profile Modal -->
+<div id="profileModal" class="hidden fixed inset-0 bg-black/50 z-40 flex items-center justify-center p-4">
+  <div class="bg-white dark:bg-neutral-800 w-full max-w-sm rounded-3xl p-6 space-y-3">
+    <h2 class="text-xl font-bold">Your Profile</h2>
+    <img id="profilePreview" class="w-24 h-24 rounded-full object-cover mx-auto bg-neutral-300" />
+    <input type="file" id="avatarInput" accept="image/*" class="w-full text-sm" />
+    <input id="profileName" placeholder="Display name" class="w-full px-4 py-3 rounded-xl bg-neutral-100 dark:bg-neutral-700 outline-none" />
+    <input id="profileAbout" placeholder="About / status" class="w-full px-4 py-3 rounded-xl bg-neutral-100 dark:bg-neutral-700 outline-none" />
+    <div class="flex gap-2 pt-2">
+      <button id="closeProfile" class="flex-1 py-3 rounded-xl bg-neutral-200 dark:bg-neutral-700">Cancel</button>
+      <button id="saveProfile" class="flex-1 py-3 rounded-xl bg-emerald-600 text-white font-semibold">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Group Modal -->
+<div id="groupModal" class="hidden fixed inset-0 bg-black/50 z-40 flex items-center justify-center p-4">
+  <div class="bg-white dark:bg-neutral-800 w-full max-w-sm rounded-3xl p-6 space-y-3">
+    <h2 class="text-xl font-bold">Create Group</h2>
+    <input id="groupName" placeholder="Group name" class="w-full px-4 py-3 rounded-xl bg-neutral-100 dark:bg-neutral-700 outline-none" />
+    <div id="groupUsers" class="max-h-56 overflow-y-auto space-y-2"></div>
+    <div class="flex gap-2 pt-2">
+      <button id="closeGroup" class="flex-1 py-3 rounded-xl bg-neutral-200 dark:bg-neutral-700">Cancel</button>
+      <button id="createGroup" class="flex-1 py-3 rounded-xl bg-emerald-600 text-white font-semibold">Create</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ---------------- Firebase config ----------------
+   For a static HTML deploy, paste your Firebase web config here.
+   These values are public client identifiers; protect data with rules. */
+const firebaseConfig = {
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_PROJECT.firebaseapp.com",
+  projectId: "YOUR_PROJECT_ID",
+  storageBucket: "YOUR_PROJECT.appspot.com",
+  messagingSenderId: "YOUR_SENDER_ID",
+  appId: "YOUR_APP_ID"
+};
+
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db = firebase.firestore();
+const storage = firebase.storage();
+
+/* ---------------- Helpers ---------------- */
+const $ = id => document.getElementById(id);
+let currentUser = null, myProfile = null;
+let activeChatId = null, activeChatData = null;
+let messagesUnsub = null, chatsUnsub = null, typingUnsub = null;
+let selectedGroupUsers = new Set();
+let replyTo = null;
+
+function toast(msg, isError=false){
+  const t = $("toast");
+  t.textContent = msg;
+  t.className = `fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl shadow-lg ${isError?"bg-red-600":"bg-neutral-900"} text-white`;
+  setTimeout(()=>t.classList.add("hidden"), 3000);
+  t.classList.remove("hidden");
+}
+
+function authErrorMessage(code){
+  const map = {
+    "auth/invalid-credential":"Incorrect email or password.",
+    "auth/user-not-found":"No account found with this email.",
+    "auth/wrong-password":"Incorrect password.",
+    "auth/email-already-in-use":"This email is already registered.",
+    "auth/weak-password":"Password must be at least 6 characters.",
+    "auth/invalid-email":"Please enter a valid email.",
+    "auth/too-many-requests":"Too many attempts. Try again later."
+  };
+  return map[code] || "Something went wrong. Please try again.";
+}
+
+function timeText(ts){
+  if(!ts) return "";
+  const d = ts.toDate();
+  return d.toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"});
+}
+
+function chatIdFor(a,b){ return [a,b].sort().join("__"); }
+
+/* ---------------- Theme ---------------- */
+$("themeBtn").onclick = () => {
+  document.documentElement.classList.toggle("dark");
+  localStorage.theme = document.documentElement.classList.contains("dark") ? "dark" : "light";
+};
+if(localStorage.theme === "light") document.documentElement.classList.remove("dark");
+
+/* ---------------- Auth ---------------- */
+let authMode = "login";
+document.querySelectorAll(".authTab").forEach(btn=>{
+  btn.onclick = ()=>{
+    authMode = btn.dataset.tab;
+    document.querySelectorAll(".authTab").forEach(b=>{
+      const active = b.dataset.tab === authMode;
+      b.className = `authTab flex-1 py-2 rounded-xl font-semibold ${active?"bg-emerald-600 text-white":"bg-neutral-200 dark:bg-neutral-700"}`;
+    });
+    $("nameInput").classList.toggle("hidden", authMode !== "signup");
+    $("authBtn").textContent = authMode === "signup" ? "Create Account" : "Login";
+    $("authError").classList.add("hidden");
+  };
+});
+
+$("authForm").onsubmit = async e=>{
+  e.preventDefault();
+  const email = $("emailInput").value.trim();
+  const pass = $("passInput").value;
+  const name = $("nameInput").value.trim();
+  $("authBtn").disabled = true;
+  try{
+    if(authMode === "signup"){
+      if(!name) throw {code:"custom", message:"Please enter your name."};
+      const cred = await auth.createUserWithEmailAndPassword(email, pass);
+      await cred.user.updateProfile({displayName:name});
+      await db.collection("users").doc(cred.user.uid).set({
+        displayName:name, email, photoURL:"", about:"Hey there! I am using NexChat.",
+        isOnline:true, lastSeen:firebase.firestore.FieldValue.serverTimestamp(),
+        createdAt:firebase.firestore.FieldValue.serverTimestamp()
+      });
+      await cred.user.sendEmailVerification();
+      toast("Account created! Verification email sent 📧");
+    } else {
+      await auth.signInWithEmailAndPassword(email, pass);
+    }
+  }catch(err){
+    $("authError").textContent = err.code === "custom" ? err.message : authErrorMessage(err.code);
+    $("authError").classList.remove("hidden");
+  }finally{
+    $("authBtn").disabled = false;
+  }
+};
+
+$("googleBtn").onclick = async ()=>{
+  try{
+    const provider = new firebase.auth.GoogleAuthProvider();
+    await auth.signInWithPopup(provider);
+  }catch(err){ toast(authErrorMessage(err.code), true); }
+};
+
+$("resetBtn").onclick = async ()=>{
+  const email = $("emailInput").value.trim();
+  if(!email) return toast("Enter your email first 📧", true);
+  try{
+    await auth.sendPasswordResetEmail(email);
+    toast("Password reset email sent ✅");
+  }catch(err){ toast(authErrorMessage(err.code), true); }
+};
+
+$("logoutBtn").onclick = async ()=>{
+  if(myProfile){
+    await db.collection("users").doc(currentUser.uid).update({
+      isOnline:false, lastSeen:firebase.firestore.FieldValue.serverTimestamp()
+    });
+  }
+  await auth.signOut();
+};
+
+/* ---------------- Presence + profile ---------------- */
+auth.onAuthStateChanged(async user=>{
+  if(!user){
+    currentUser = myProfile = null;
+    $("authScreen").classList.remove("hidden");
+    $("appScreen").classList.add("hidden");
+    if(chatsUnsub) chatsUnsub();
+    return;
+  }
+  currentUser = user;
+  $("authScreen").classList.add("hidden");
+  $("appScreen").classList.remove("hidden");
+
+  const ref = db.collection("users").doc(user.uid);
+  const snap = await ref.get();
+  if(!snap.exists){
+    await ref.set({
+      displayName:user.displayName || user.email.split("@")[0],
+      email:user.email, photoURL:user.photoURL || "",
+      about:"Hey there! I am using NexChat.",
+      isOnline:true, lastSeen:firebase.firestore.FieldValue.serverTimestamp(),
+      createdAt:firebase.firestore.FieldValue.serverTimestamp()
+    });
+  } else {
+    await ref.update({isOnline:true, lastSeen:firebase.firestore.FieldValue.serverTimestamp()});
+  }
+
+  ref.onSnapshot(doc=>{
+    myProfile = {id:doc.id, ...doc.data()};
+    $("myName").textContent = myProfile.displayName;
+    $("myAvatar").src = myProfile.photoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(myProfile.displayName)}`;
+    $("myStatus").textContent = myProfile.isOnline ? "Online 🟢" : "Last seen recently";
+  });
+
+  listenChats();
+});
+
+window.addEventListener("beforeunload", ()=>{
+  if(currentUser && myProfile){
+    db.collection("users").doc(currentUser.uid)
+      .update({isOnline:false, lastSeen:firebase.firestore.FieldValue.serverTimestamp()});
+  }
+});
+
+/* ---------------- Profile modal ---------------- */
+$("profileBtn").onclick = ()=>{
+  $("profileName").value = myProfile.displayName || "";
+  $("profileAbout").value = myProfile.about || "";
+  $("profilePreview").src = myProfile.photoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(myProfile.displayName)}`;
+  $("profileModal").classList.remove("hidden");
+};
+$("closeProfile").onclick = ()=>$("profileModal").classList.add("hidden");
+
+$("saveProfile").onclick = async ()=>{
+  const name = $("profileName").value.trim();
+  if(!name) return toast("Name cannot be empty", true);
+  const file = $("avatarInput").files[0];
+  let photoURL = myProfile.photoURL || "";
+  try{
+    if(file){
+      if(file.size > 5*1024*1024) return toast("Image must be under 5MB", true);
+      const path = `avatars/${currentUser.uid}/${Date.now()}_${file.name}`;
+      const task = await storage.ref(path).put(file);
+      photoURL = await task.ref.getDownloadURL();
+    }
+    await db.collection("users").doc(currentUser.uid).update({
+      displayName:name, about:$("profileAbout").value.trim(), photoURL
+    });
+    await currentUser.updateProfile({displayName:name, photoURL});
+    $("profileModal").classList.add("hidden");
+    toast("Profile updated ✨");
+  }catch(err){ toast(err.message, true); }
+};
+
+/* ---------------- Users + chat list ---------------- */
+$("searchInput").oninput = renderChatList;
+
+function listenChats(){
+  if(chatsUnsub) chatsUnsub();
+  chatsUnsub = db.collection("chats")
+    .where("members","array-contains",currentUser.uid)
+    .onSnapshot(async snap=>{
+      window.myChats = [];
+      for(const doc of snap.docs){
+        const data = doc.data();
+        let title, photo, subtitle, otherId = null;
+        if(data.type === "private"){
+          otherId = data.members.find(m=>m !== currentUser.uid);
+          const u = await db.collection("users").doc(otherId).get();
+          const ud = u.data() || {};
+          title = ud.displayName || "Unknown User";
+          photo = ud.photoURL || "";
+          subtitle = ud.isOnline ? "Online 🟢" : "Offline";
+        } else {
+          title = data.groupName || "Group";
+          photo = data.groupPhotoURL || "";
+          subtitle = `${data.members.length} members`;
+        }
+        const meta = await db.collection("users").doc(currentUser.uid)
+          .collection("chatMetadata").doc(doc.id).get();
+        window.myChats.push({
+          id:doc.id, ...data, title, photo, subtitle, otherId,
+          unreadCount:meta.exists ? meta.data().unreadCount || 0 : 0
+        });
+      }
+      window.myChats.sort((a,b)=>(b.lastMessageAt?.seconds||0)-(a.lastMessageAt?.seconds||0));
+      renderChatList();
+    });
+}
+
+async function renderChatList(){
+  const q = $("searchInput").value.trim().toLowerCase();
+  const list = $("chatList");
+  list.innerHTML = "";
+
+  if(q){
+    const snap = await db.collection("users")
+      .orderBy("displayName").startAt(q).endAt(q+"\uf8ff").get();
+    snap.forEach(doc=>{
+      if(doc.id === currentUser.uid) return;
+      const u = doc.data();
+      list.insertAdjacentHTML("beforeend", `
+        <button class="w-full text-left p-3 flex items-center gap-3 hover:bg-neutral-100 dark:hover:bg-neutral-700"
+          onclick="openPrivate('${doc.id}')">
+          <img class="w-12 h-12 rounded-full object-cover bg-neutral-300"
+            src="${u.photoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(u.displayName)}`}">
+          <div><p class="font-semibold">${u.displayName}</p><p class="text-xs opacity-60">${u.email}</p></div>
+        </button>`);
+    });
+    return;
+  }
+
+  if(!window.myChats?.length){
+    list.innerHTML = `<div class="p-8 text-center opacity-60">No chats yet 😅<br>Search a user to begin!</div>`;
+    return;
+  }
+
+  window.myChats.forEach(c=>{
+    list.insertAdjacentHTML("beforeend", `
+      <button class="w-full text-left p-3 flex items-center gap-3 hover:bg-neutral-100 dark:hover:bg-neutral-700"
+        onclick="openChat('${c.id}')">
+        <img class="w-12 h-12 rounded-full object-cover bg-neutral-300"
+          src="${c.photo || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(c.title)}`}">
+        <div class="flex-1 min-w-0">
+          <div class="flex justify-between">
+            <p class="font-semibold truncate">${c.title}</p>
+            <span class="text-xs opacity-60">${timeText(c.lastMessageAt)}</span>
+          </div>
+          <div class="flex justify-between items-center">
+            <p class="text-sm opacity-60 truncate">${c.lastMessage || "Say hi 👋"}</p>
+            ${c.unreadCount ? `<span class="ml-2 px-2 py-0.5 text-xs rounded-full bg-emerald-600 text-white">${c.unreadCount}</span>` : ""}
+          </div>
+        </div>
+      </button>`);
+  });
+}
+
+async function openPrivate(otherId){
+  const id = chatIdFor(currentUser.uid, otherId);
+  const ref = db.collection("chats").doc(id);
+  const snap = await ref.get();
+  if(!snap.exists){
+    await ref.set({
+      type:"private", members:[currentUser.uid, otherId],
+      lastMessage:"", lastMessageAt:firebase.firestore.FieldValue.serverTimestamp(),
+      createdAt:firebase.firestore.FieldValue.serverTimestamp()
+    });
+  }
+  openChat(id);
+}
+
+/* ---------------- Open chat + messages ---------------- */
+function openChat(chatId){
+  activeChatId = chatId;
+  activeChatData = window.myChats.find(c=>c.id===chatId);
+  $("emptyChat").classList.add("hidden");
+  $("activeChat").classList.remove("hidden");
+  $("chatPanel").classList.remove("hidden");
+  $("sidebar").classList.add("hidden");
+  $("chatTitle").textContent = activeChatData.title;
+  $("chatSubtitle").textContent = activeChatData.subtitle;
+  $("chatAvatar").src = activeChatData.photo || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(activeChatData.title)}`;
+
+  if(messagesUnsub) messagesUnsub();
+  if(typingUnsub) typingUnsub();
+
+  messagesUnsub = db.collection("chats").doc(chatId)
+    .collection("messages").orderBy("createdAt","asc").limit(100)
+    .onSnapshot(async snap=>{
+      const box = $("messages");
+      box.innerHTML = "";
+      for(const doc of snap.docs){
+        const m = doc.data();
+        const mine = m.senderId === currentUser.uid;
+        const sender = mine ? myProfile : await getUser(m.senderId);
+        const deleted = (m.deletedFor||[]).includes(currentUser.uid);
+        box.insertAdjacentHTML("beforeend", `
+          <div class="flex ${mine?"justify-end":"justify-start"}">
+            <div class="max-w-[75%] px-4 py-2 ${mine?"bubble-me":"bubble-them"}">
+              ${activeChatData.type==="group" && !mine ? `<p class="text-xs font-bold opacity-80">${sender?.displayName||"User"}</p>`:""}
+              ${m.replyTo ? `<div class="text-xs opacity-70 border-l-2 border-current pl-2 mb-1">Replying: ${m.replyTo}</div>`:""}
+              ${deleted ? `<p class="italic opacity-70">This message was deleted 🚫</p>`
+                : m.type==="image" ? `<img src="${m.mediaURL}" class="rounded-xl max-h-64 mb-1">`
+                : m.type==="file" ? `<a href="${m.mediaURL}" target="_blank" class="underline">📎 ${m.fileName||"File"}</a>`
+                : `<p>${escapeHtml(m.text||"")}</p>`}
+              <div class="text-[10px] mt-1 opacity-70 text-right">
+                ${timeText(m.createdAt)} ${mine?(m.readBy?.length>1?"✓✓":"✓"):""}
+              </div>
+              ${!deleted ? `<button class="text-[10px] opacity-60 hover:underline" onclick="deleteMsg('${doc.id}')">Delete</button>`:""}
+            </div>
+          </div>`);
+        if(!mine && !(m.readBy||[]).includes(currentUser.uid)){
+          doc.ref.update({readBy:firebase.firestore.FieldValue.arrayUnion(currentUser.uid)});
+        }
+      }
+      box.scrollTop = box.scrollHeight;
+
+      if(activeChatData.unreadCount){
+        await db.collection("users").doc(currentUser.uid)
+          .collection("chatMetadata").doc(chatId).set({unreadCount:0},{merge:true});
+      }
+    });
+
+  typingUnsub = db.collection("chats").doc(chatId)
+    .collection("typing").doc("status")
+    .onSnapshot(doc=>{
+      const data = doc.data() || {};
+      const otherTyping = Object.entries(data).some(([uid,val])=>uid!==currentUser.uid && val);
+      $("typingBar").classList.toggle("hidden", !otherTyping);
+    });
+}
+
+async function getUser(uid){
+  const snap = await db.collection("users").doc(uid).get();
+  return snap.exists ? {id:snap.id,...snap.data()} : null;
+}
+
+function escapeHtml(s){ return s.replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+
+$("backBtn").onclick = ()=>{
+  $("sidebar").classList.remove("hidden");
+  $("chatPanel").classList.add("hidden");
+  if(messagesUnsub) messagesUnsub();
+};
+
+/* ---------------- Send message ---------------- */
+$("msgInput").addEventListener("input", async ()=>{
+  if(!activeChatId) return;
+  await db.collection("chats").doc(activeChatId)
+    .collection("typing").doc("status")
+    .set({[currentUser.uid]:true},{merge:true});
+  clearTimeout(window.typingTimeout);
+  window.typingTimeout = setTimeout(async ()=>{
+    await db.collection("chats").doc(activeChatId)
+      .collection("typing").doc("status")
+      .set({[currentUser.uid]:false},{merge:true});
+  }, 2000);
+});
+
+$("attachBtn").onclick = ()=>$("fileInput").click();
+
+$("fileInput").onchange = async ()=>{
+  const file = $("fileInput").files[0];
+  if(!file || !activeChatId) return;
+  if(file.size > 10*1024*1024) return toast("File must be under 10MB", true);
+  try{
+    const path = `chats/${activeChatId}/${Date.now()}_${file.name}`;
+    const task = await storage.ref(path).put(file);
+    const url = await task.ref.getDownloadURL();
+    const isImage = file.type.startsWith("image/");
+    await sendMessage("", isImage ? "image" : "file", url, file.name);
+  }catch(err){ toast(err.message, true); }
+  $("fileInput").value = "";
+};
+
+$("msgForm").onsubmit = async e=>{
+  e.preventDefault();
+  const text = $("msgInput").value.trim();
+  if(!text || !activeChatId) return;
+  await sendMessage(text, "text");
+  $("msgInput").value = "";
+};
+
+async function sendMessage(text, type="text", mediaURL="", fileName=""){
+  const chatRef = db.collection("chats").doc(activeChatId);
+  await chatRef.collection("messages").add({
+    senderId:currentUser.uid, text, type, mediaURL, fileName,
+    replyTo:replyTo || "",
+    createdAt:firebase.firestore.FieldValue.serverTimestamp(),
+    readBy:[currentUser.uid], deletedFor:[]
+  });
+  await chatRef.update({
+    lastMessage: type==="image" ? "📷 Photo" : type==="file" ? "📎 File" : text,
+    lastMessageAt:firebase.firestore.FieldValue.serverTimestamp()
+  });
+
+  const chat = window.myChats.find(c=>c.id===activeChatId);
+  for(const uid of chat.members){
+    if(uid === currentUser.uid) continue;
+    await db.collection("users").doc(uid)
+      .collection("chatMetadata").doc(activeChatId)
+      .set({unreadCount:firebase.firestore.FieldValue.increment(1)},{merge:true});
+  }
+  replyTo = null;
+}
+
+async function deleteMsg(msgId){
+  await db.collection("chats").doc(activeChatId)
+    .collection("messages").doc(msgId)
+    .update({deletedFor:firebase.firestore.FieldValue.arrayUnion(currentUser.uid)});
+}
+
+/* ---------------- Groups ---------------- */
+$("newGroupBtn").onclick = async ()=>{
+  $("groupModal").classList.remove("hidden");
+  $("groupUsers").innerHTML = "";
+  selectedGroupUsers.clear();
+  const snap = await db.collection("users").get();
+  snap.forEach(doc=>{
+    if(doc.id === currentUser.uid) return;
+    const u = doc.data();
+    $("groupUsers").insertAdjacentHTML("beforeend", `
+      <label class="flex items-center gap-3 p-2 rounded-xl hover:bg-neutral-100 dark:hover:bg-neutral-700">
+        <input type="checkbox" onchange="toggleGroupUser('${doc.id}', this.checked)">
+        <img class="w-8 h-8 rounded-full" src="${u.photoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(u.displayName)}`}">
+        <span>${u.displayName}</span>
+      </label>`);
+  });
+};
+
+function toggleGroupUser(uid, checked){
+  checked ? selectedGroupUsers.add(uid) : selectedGroupUsers.delete(uid);
+}
+
+$("closeGroup").onclick = ()=>$("groupModal").classList.add("hidden");
+
+$("createGroup").onclick = async ()=>{
+  const name = $("groupName").value.trim();
+  if(!name) return toast("Enter a group name", true);
+  if(selectedGroupUsers.size < 1) return toast("Select at least one member", true);
+  try{
+    const ref = await db.collection("chats").add({
+      type:"group", groupName:name, groupPhotoURL:"",
+      members:[currentUser.uid, ...selectedGroupUsers],
+      admins:[currentUser.uid],
+      lastMessage:"", lastMessageAt:firebase.firestore.FieldValue.serverTimestamp(),
+      createdAt:firebase.firestore.FieldValue.serverTimestamp()
+    });
+    $("groupModal").classList.add("hidden");
+    $("groupName").value = "";
+    toast("Group created 🎉");
+    openChat(ref.id);
+  }catch(err){ toast(err.message, true); }
+};
+</script>
+</body>
+</html>
